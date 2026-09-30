@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import ai_service
 from app.models.concept import Concept, LearnerConceptMastery
+from app.models.document import Document
+from app.core.config import settings
 from app.models.quiz import Question, Quiz
 from app.services.knowledge_graph_service import knowledge_graph_service
 from app.services.mastery_service import MasteryService
@@ -20,11 +22,11 @@ class AdaptiveLearningService:
     ) -> Dict[str, Any]:
         weak_topics = await weak_topic_service.get_weak_topics(user_id, db, limit=5)
         if not weak_topics:
-            return {"message": "No weak topics found. Initialize demo or upload documents.", "session": None}
+            return {"message": "No assessed concepts yet. Upload study material and complete an assessment to begin adaptive learning.", "session": None}
 
         target = weak_topics[0]
         concept_result = await db.execute(
-            select(Concept).where(Concept.id == target["concept_id"])
+            select(Concept).join(Document).where(Concept.id == target["concept_id"], Document.user_id == user_id)
         )
         concept = concept_result.scalar_one_or_none()
         if not concept:
@@ -33,20 +35,28 @@ class AdaptiveLearningService:
         if not document_id:
             document_id = concept.document_id
 
-        prerequisites = await knowledge_graph_service.get_prerequisites(concept.id, db)
+        prerequisites = await knowledge_graph_service.get_prerequisites(concept.id, db, user_id=user_id)
         mastery_map = await knowledge_graph_service.get_mastery_map(user_id, db)
 
         difficulty = MasteryService.get_difficulty_for_mastery(target["mastery"])
 
         if ai_service.available:
-            questions_data = ai_service.generate_adaptive_quiz(
-                target_concept=concept.name,
-                prerequisites=[p.name for p in prerequisites],
-                learner_mastery=target["mastery"],
-                recent_mistakes=[],
-            )
+            try:
+                questions_data = ai_service.generate_adaptive_quiz(
+                    target_concept=concept.name,
+                    prerequisites=[p.name for p in prerequisites],
+                    learner_mastery=target["mastery"],
+                    recent_mistakes=[],
+                )
+            except Exception:
+                questions_data = []
         else:
-            questions_data = AdaptiveLearningService._demo_questions(concept, difficulty)
+            from app.models.user import User
+            learner = await db.get(User, user_id)
+            questions_data = AdaptiveLearningService._demo_questions(concept, difficulty) if settings.demo_mode and learner and learner.is_demo else []
+        questions_data = AdaptiveLearningService._validated_questions(questions_data)
+        if not questions_data:
+            return {"message": "Adaptive questions are temporarily unavailable. Try again later.", "session": None}
 
         quiz = Quiz(
             document_id=document_id,
@@ -94,7 +104,7 @@ class AdaptiveLearningService:
                 {
                     "id": p.id,
                     "name": p.name,
-                    "mastery": m.mastery_score if m else 0.0,
+                    "mastery": m.mastery_score if m else None,
                 }
             )
 
@@ -121,6 +131,22 @@ class AdaptiveLearningService:
         if mastery < 60:
             return ["Core concepts application", "Recursion in trees"]
         return ["Advanced problem-solving"]
+
+    @staticmethod
+    def _validated_questions(items: Any) -> List[Dict[str, Any]]:
+        if not isinstance(items, list):
+            return []
+        valid = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            prompt, options, answer = item.get("question_text"), item.get("options"), item.get("correct_answer")
+            if (isinstance(prompt, str) and prompt.strip()
+                    and isinstance(options, list) and len(options) >= 2
+                    and all(isinstance(option, str) and option.strip() for option in options)
+                    and isinstance(answer, str) and answer in options):
+                valid.append(item)
+        return valid
 
     @staticmethod
     def _demo_questions(concept: Concept, difficulty: str) -> List[Dict[str, Any]]:

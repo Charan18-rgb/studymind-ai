@@ -30,6 +30,7 @@ export default function Quizzes() {
   const [submitting, setSubmitting] = useState(false)
   const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null)
   const [startTime, setStartTime] = useState<number>(Date.now())
+  const [loadingConcepts, setLoadingConcepts] = useState(true)
 
   useEffect(() => {
     loadConcepts()
@@ -44,8 +45,10 @@ export default function Quizzes() {
       }
     } catch (err) {
       console.error('Failed to load concepts for quizzes:', err)
-    }
+    } finally { setLoadingConcepts(false) }
   }
+
+  if (!loadingConcepts && concepts.length === 0) return <div className="mx-auto max-w-3xl space-y-5"><h1 className="text-3xl font-bold">Quizzes</h1><Card className="ambient-panel"><CardContent className="space-y-3 p-10 text-center"><Network className="mx-auto h-10 w-10 text-primary" /><h2 className="text-lg font-semibold">Upload study material before creating a concept assessment</h2><p className="text-sm text-muted-foreground">Once your PDF is processed, its concepts will be available for assessment.</p><Link className="text-primary underline" to="/materials">Go to Materials</Link></CardContent></Card></div>
 
   const handleStartQuiz = async () => {
     if (!selectedConceptId) return
@@ -276,7 +279,7 @@ export default function Quizzes() {
                   >
                     <div className="font-semibold text-sm text-foreground">{concept.name}</div>
                     <div className="text-muted-foreground mt-0.5">
-                      Mastery: {Math.round(concept.mastery)}%
+                      Mastery: {concept.mastery == null ? 'Not assessed' : `${Math.round(concept.mastery)}%`}
                     </div>
                   </button>
                 )

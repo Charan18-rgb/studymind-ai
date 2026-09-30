@@ -40,7 +40,7 @@ export default function KnowledgeMap() {
       if (data.nodes && data.nodes.length > 0) {
         // Select the weakest topic by default or first node
         const preferred = data.nodes.find((node) => node.id === preferredConceptId)
-        const weakest = [...data.nodes].sort((a, b) => a.mastery - b.mastery)[0]
+        const weakest = [...data.nodes].sort((a, b) => (a.mastery ?? 101) - (b.mastery ?? 101))[0]
         selectConcept(preferred || weakest || data.nodes[0])
       }
     } catch (err) {
@@ -64,11 +64,11 @@ export default function KnowledgeMap() {
     }
   }
 
-  const getNodeColor = (status: string, mastery: number) => {
-    if (mastery >= 80 || status === 'mastered') return { bg: 'bg-emerald-500', text: 'text-emerald-300', border: 'border-emerald-400', light: 'bg-emerald-500/10' }
-    if (mastery >= 60 || status === 'proficient') return { bg: 'bg-blue-500', text: 'text-blue-300', border: 'border-blue-400', light: 'bg-blue-500/10' }
-    if (mastery >= 40 || status === 'developing') return { bg: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-400', light: 'bg-amber-500/10' }
-    if (mastery > 0 || status === 'needs_foundation') return { bg: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-400', light: 'bg-rose-500/10' }
+  const getNodeColor = (status: string, mastery: number | null) => {
+    if ((mastery != null && mastery >= 80) || status === 'mastered') return { bg: 'bg-emerald-500', text: 'text-emerald-300', border: 'border-emerald-400', light: 'bg-emerald-500/10' }
+    if ((mastery != null && mastery >= 60) || status === 'proficient') return { bg: 'bg-blue-500', text: 'text-blue-300', border: 'border-blue-400', light: 'bg-blue-500/10' }
+    if ((mastery != null && mastery >= 40) || status === 'developing') return { bg: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-400', light: 'bg-amber-500/10' }
+    if ((mastery != null && mastery > 0) || status === 'needs_foundation') return { bg: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-400', light: 'bg-rose-500/10' }
     return { bg: 'bg-slate-400', text: 'text-slate-300', border: 'border-slate-400', light: 'bg-slate-400/10' }
   }
 
@@ -279,7 +279,7 @@ export default function KnowledgeMap() {
                             onClick={() => selectConcept(node)}
                             role="button"
                             tabIndex={0}
-                            aria-label={`${node.name}, ${Math.round(node.mastery)} percent mastery`}
+                            aria-label={`${node.name}, ${node.mastery == null ? 'not assessed' : `${Math.round(node.mastery)} percent mastery`}`}
                             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectConcept(node) } }}
                             className={`map-node cursor-pointer ${isSelected ? 'map-node-selected' : ''}`}
                           >
@@ -311,7 +311,7 @@ export default function KnowledgeMap() {
                               dy="-2"
                               className="fill-white font-bold text-xs pointer-events-none"
                             >
-                              {Math.round(node.mastery)}%
+                              {node.mastery == null ? '—' : `${Math.round(node.mastery)}%`}
                             </text>
                             <text
                               textAnchor="middle"
@@ -333,7 +333,7 @@ export default function KnowledgeMap() {
                             </text>
 
                             {/* Warning alert if needs foundation */}
-                            {node.mastery < 50 && (
+                            {node.mastery != null && node.mastery < 50 && (
                               <g transform="translate(16, -26)">
                                 <circle r="9" fill="#f43f5e" />
                                 <text
@@ -379,13 +379,13 @@ export default function KnowledgeMap() {
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-bold text-white ${color.bg}`}
                         >
-                          {Math.round(node.mastery)}%
+                          {node.mastery == null ? 'Not assessed' : `${Math.round(node.mastery)}%`}
                         </span>
                       </div>
-                      <Progress value={node.mastery} className="h-1.5 mb-2" />
+                      <Progress value={node.mastery ?? 0} className="h-1.5 mb-2" />
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span className="capitalize">{node.status.replace('_', ' ')}</span>
-                        <span>{node.accuracy ? `${Math.round(node.accuracy)}% acc` : '0 attempts'}</span>
+                        <span>{node.total_attempts ? `${Math.round(node.accuracy ?? 0)}% acc` : 'Not assessed'}</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -404,9 +404,9 @@ export default function KnowledgeMap() {
                   <div>
                     <Badge
                       variant={
-                        selectedNode.mastery >= 80
+                        (selectedNode.mastery ?? -1) >= 80
                           ? 'default'
-                          : selectedNode.mastery < 40
+                          : selectedNode.mastery != null && selectedNode.mastery < 40
                           ? 'destructive'
                           : 'secondary'
                       }
@@ -418,7 +418,7 @@ export default function KnowledgeMap() {
                   </div>
                   <div className="text-right">
                     <span className="text-2xl font-extrabold text-primary">
-                      {Math.round(selectedNode.mastery)}%
+                      {selectedNode.mastery == null ? 'Not assessed' : `${Math.round(selectedNode.mastery)}%`}
                     </span>
                     <p className="text-[11px] text-muted-foreground">Mastery Score</p>
                   </div>
@@ -432,7 +432,7 @@ export default function KnowledgeMap() {
                   <div>
                     <span className="text-xs text-muted-foreground block">Historical Accuracy</span>
                     <span className="text-base font-bold text-foreground">
-                      {selectedNode.accuracy ? `${Math.round(selectedNode.accuracy)}%` : 'N/A'}
+                      {selectedNode.total_attempts ? `${Math.round(selectedNode.accuracy ?? 0)}%` : 'Not assessed'}
                     </span>
                   </div>
                   <div>
@@ -457,15 +457,15 @@ export default function KnowledgeMap() {
                           className="flex items-center justify-between p-2 rounded bg-muted/30 text-xs border"
                         >
                           <div className="flex items-center gap-2">
-                            {p.mastery >= 60 ? (
+                            {(p.mastery ?? 0) >= 60 ? (
                               <CheckCircle className="w-4 h-4 text-emerald-500" />
                             ) : (
                               <AlertCircle className="w-4 h-4 text-amber-500" />
                             )}
                             <span className="font-medium">{p.name}</span>
                           </div>
-                          <Badge variant={p.mastery >= 60 ? 'outline' : 'destructive'} className="text-[10px]">
-                            {Math.round(p.mastery)}% mastery
+                          <Badge variant={(p.mastery ?? 0) >= 60 ? 'outline' : 'destructive'} className="text-[10px]">
+                            {p.mastery == null ? 'Not assessed' : `${Math.round(p.mastery)}% mastery`}
                           </Badge>
                         </div>
                       ))}

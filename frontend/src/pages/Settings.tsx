@@ -2,33 +2,32 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { User, Bell, Accessibility, Check, Volume2 } from 'lucide-react'
+import { User, Bell, Accessibility, Volume2 } from 'lucide-react'
+import { useAuth } from '@/auth/AuthContext'
 
 export default function Settings() {
-  const [name, setName] = useState('Student')
-  const [email, setEmail] = useState('student@example.com')
-  const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg' | 'xl'>('md')
-  const [highContrast, setHighContrast] = useState(false)
-  const [reducedMotion, setReducedMotion] = useState(false)
-  const [tts, setTts] = useState(true)
-  const [simplifiedExp, setSimplifiedExp] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const { user } = useAuth()
+  const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg' | 'xl'>(() => (localStorage.getItem('studymind.fontSize') as 'sm' | 'md' | 'lg' | 'xl') || 'md')
+  const [highContrast, setHighContrast] = useState(() => localStorage.getItem('studymind.highContrast') === 'true')
+  const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem('studymind.reducedMotion') === 'true' || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [tts, setTts] = useState(() => localStorage.getItem('studymind.tts') !== 'false')
+  const [simplifiedExp, setSimplifiedExp] = useState(() => localStorage.getItem('studymind.simplifiedExp') === 'true')
 
   useEffect(() => {
     document.documentElement.classList.toggle('reduce-motion', reducedMotion)
+    localStorage.setItem('studymind.reducedMotion', String(reducedMotion))
     return () => document.documentElement.classList.remove('reduce-motion')
   }, [reducedMotion])
 
   useEffect(() => {
     document.documentElement.classList.toggle('high-contrast', highContrast)
+    localStorage.setItem('studymind.highContrast', String(highContrast))
     return () => document.documentElement.classList.remove('high-contrast')
   }, [highContrast])
 
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
+  useEffect(() => { localStorage.setItem('studymind.fontSize', fontSize) }, [fontSize])
+  useEffect(() => { localStorage.setItem('studymind.tts', String(tts)) }, [tts])
+  useEffect(() => { localStorage.setItem('studymind.simplifiedExp', String(simplifiedExp)) }, [simplifiedExp])
 
   const testTTS = () => {
     if ('speechSynthesis' in window) {
@@ -59,14 +58,14 @@ export default function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          <form onSubmit={handleSaveProfile} className="space-y-4">
+          <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold mb-1.5 block">Display Name</label>
                 <input
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={user?.name ?? ''}
+                  readOnly
                   className="w-full px-3 py-2 text-xs border rounded-md bg-background"
                 />
               </div>
@@ -74,24 +73,16 @@ export default function Settings() {
                 <label className="text-xs font-semibold mb-1.5 block">Email Address</label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={user?.email ?? ''}
+                  readOnly
                   className="w-full px-3 py-2 text-xs border rounded-md bg-background"
                 />
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="submit" size="sm">
-                {saved ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Saved!
-                  </>
-                ) : (
-                  'Save Profile'
-                )}
-              </Button>
+              <span className="text-xs text-muted-foreground">Account identity is managed by your StudyMind account.</span>
             </div>
-          </form>
+          </div>
         </CardContent>
       </Card>
 

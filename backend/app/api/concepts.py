@@ -9,9 +9,9 @@ from app.core.deps import get_current_user_id
 from app.database.session import get_db
 from app.models.concept import Concept as ConceptModel
 from app.models.concept import LearnerConceptMastery as MasteryModel
+from app.models.document import Document
 from app.schemas.concept import Concept, ConceptWithMastery, LearnerConceptMastery as LearnerMasterySchema
 from app.services.knowledge_graph_service import knowledge_graph_service
-from app.services.mastery_persistence import get_or_create_mastery
 from app.services.weak_topic_service import weak_topic_service
 
 router = APIRouter(prefix="/concepts", tags=["concepts"])
@@ -23,8 +23,29 @@ async def get_knowledge_graph(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    if not document_id:
-        document_id = await knowledge_graph_service.get_primary_demo_document_id(user_id, db)
+    if document_id:
+        owned = await db.scalar(select(Document.id).where(Document.id == document_id, Document.user_id == user_id))
+        if not owned:
+            raise HTTPException(status_code=404, detail="Document not found")
+    else:
+        # Prefer a document that has an extracted graph. A valid upload can be
+        # retained even when AI extraction is unavailable; it should not hide
+        # an existing graph for that same learner.
+        document_id = await db.scalar(
+            select(Document.id)
+            .join(ConceptModel, ConceptModel.document_id == Document.id)
+            .where(Document.user_id == user_id)
+            .group_by(Document.id)
+            .order_by(Document.created_at.desc())
+            .limit(1)
+        )
+        if not document_id:
+            document_id = await db.scalar(
+                select(Document.id)
+                .where(Document.user_id == user_id)
+                .order_by(Document.created_at.desc())
+                .limit(1)
+            )
     if not document_id:
         return {"document_id": None, "nodes": [], "edges": []}
     return await knowledge_graph_service.get_graph_for_document(document_id, user_id, db)
@@ -35,7 +56,7 @@ async def get_learner_mastery(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(MasteryModel).where(MasteryModel.user_id == user_id))
+    result = await db.execute(select(MasteryModel).join(ConceptModel).join(Document).where(MasteryModel.user_id == user_id, Document.user_id == user_id))
     return result.scalars().all()
 
 
@@ -58,9 +79,13 @@ async def get_weak_topic_diagnosis(
 @router.get("/document/{document_id}", response_model=List[Concept])
 async def get_document_concepts(
     document_id: int,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ConceptModel).where(ConceptModel.document_id == document_id))
+    owned = await db.scalar(select(Document.id).where(Document.id == document_id, Document.user_id == user_id))
+    if not owned:
+        raise HTTPException(status_code=404, detail="Document not found")
     return result.scalars().all()
 
 
@@ -71,13 +96,13 @@ async def get_adaptive_explanation(
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Generate adaptive explanation tailored to the learner's current mastery level."""
-    result = await db.execute(select(ConceptModel).where(ConceptModel.id == concept_id))
+    result = await db.execute(select(ConceptModel).join(Document).where(ConceptModel.id == concept_id, Document.user_id == user_id))
     concept = result.scalar_one_or_none()
     if not concept:
         raise HTTPException(status_code=404, detail="Concept not found")
 
-    mastery = await get_or_create_mastery(user_id, concept_id, db)
-    mastery_score = mastery.mastery_score
+    mastery = await db.scalar(select(MasteryModel).where(MasteryModel.user_id == user_id, MasteryModel.concept_id == concept_id))
+    mastery_score = mastery.mastery_score if mastery else 0.0
 
     prerequisites = await knowledge_graph_service.get_prerequisites(concept_id, db)
     prereq_names = [p.name for p in prerequisites]
@@ -93,7 +118,7 @@ async def get_adaptive_explanation(
                 "concept_id": concept.id,
                 "concept_name": concept.name,
                 "learner_mastery": mastery_score,
-                "learning_status": mastery.learning_status,
+                "learning_status": mastery.learning_status if mastery else "not_assessed",
                 "prerequisites": prereq_names,
                 **ai_exp,
             }
@@ -155,7 +180,7 @@ async def get_adaptive_explanation(
         "concept_id": concept.id,
         "concept_name": concept.name,
         "learner_mastery": mastery_score,
-        "learning_status": mastery.learning_status,
+        "learning_status": mastery.learning_status if mastery else "not_assessed",
         "level_label": level_label,
         "prerequisites": prereq_names,
         **base,
@@ -168,7 +193,7 @@ async def get_concept(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ConceptModel).where(ConceptModel.id == concept_id))
+    result = await db.execute(select(ConceptModel).join(Document).where(ConceptModel.id == concept_id, Document.user_id == user_id))
     concept = result.scalar_one_or_none()
     if not concept:
         raise HTTPException(status_code=404, detail="Concept not found")

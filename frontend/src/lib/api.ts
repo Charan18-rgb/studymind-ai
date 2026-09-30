@@ -1,7 +1,7 @@
 const API = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, init)
+  const res = await fetch(`${API}${path}`, { credentials: 'include', ...init })
   if (!res.ok) {
     const text = await res.text()
     try {
@@ -15,6 +15,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  register: (data: { name: string; email: string; password: string }) => request<AuthUser>('/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  login: (data: { email: string; password: string }) => request<AuthUser>('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+  me: () => request<AuthUser>('/auth/me'),
   // Demo
   initializeDemo: () => request<{ message: string }>('/demo/initialize', { method: 'POST' }),
   resetDemo: () => request<{ message: string }>('/demo/reset', { method: 'POST' }),
@@ -115,6 +119,8 @@ export interface Recommendation {
   priority: number
 }
 
+export interface AuthUser { id: number; name: string; email: string }
+
 export interface DashboardResponse {
   user: { name: string; email: string; is_demo: boolean }
   stats: {
@@ -123,6 +129,7 @@ export interface DashboardResponse {
     streak_days: number
     study_hours: number
     topics_mastered: number
+    assessed_concepts: number
   }
   weak_topics: WeakTopic[]
   recent_activity: {
@@ -132,6 +139,8 @@ export interface DashboardResponse {
     metadata?: Record<string, any>
   }[]
   next_best_action: Recommendation
+  document_count: number
+  concept_count: number
 }
 
 export interface WeakTopic {
@@ -169,8 +178,8 @@ export interface GraphNode {
   name: string
   description?: string
   difficulty?: string
-  mastery: number
-  accuracy: number
+  mastery: number | null
+  accuracy: number | null
   total_attempts: number
   correct_attempts: number
   status: string
@@ -285,6 +294,7 @@ export interface DocumentItem {
   filename: string
   page_count: number
   status: string
+  processing_message?: string | null
   created_at?: string
 }
 

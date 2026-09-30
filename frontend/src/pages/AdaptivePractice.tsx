@@ -55,7 +55,7 @@ export default function AdaptivePractice() {
       if (res.session) {
         setSessionData(res.session)
       } else {
-        setError(res.message || 'No weak topic found. Try loading demo data or uploading a document.')
+        setError(res.message || 'Complete an assessment before starting adaptive practice.')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initialize adaptive session')
@@ -142,7 +142,7 @@ export default function AdaptivePractice() {
             <Target className="w-14 h-14 text-muted-foreground mx-auto opacity-50" />
             <h3 className="text-xl font-semibold">No Adaptive Session Ready</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              {error || 'Load demo data from the dashboard to practice with predefined learner mastery.'}
+              {error || 'Complete an assessment before starting personalized practice.'}
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <Button onClick={() => navigate('/')} variant="outline" className="gap-2">

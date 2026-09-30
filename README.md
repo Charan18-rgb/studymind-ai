@@ -2,34 +2,44 @@
 
 > **Adaptive learning that understands the learner.**
 
-StudyMind AI is a hackathon prototype that connects study material, concept prerequisites, and a learner's concept-level mastery to identify a useful next learning action. Its central question is: **What should this learner learn next?**
-
-## The adaptive loop
-
-```text
-Study material → extracted text → extracted (or seeded demo) concepts and relationships
-              → persisted learner mastery → weakness diagnosis
-              → targeted practice → server-side scoring and saved results
-              → recalculated mastery → updated next action
-```
-
-The components interact: practice results update the learner model, and the next recommendation is computed from the updated mastery and prerequisite state.
+StudyMind AI is a multi-user learning application that turns each learner's own study material into a private knowledge graph, records assessment performance, and uses the learner model to choose what to study next.
 
 ## What it does
 
-- Extracts PDF text by page with PyMuPDF and stores page-aware text chunks.
-- When Gemini is configured, attempts to extract concepts and prerequisite/related relationships into a concept graph; the demo uses a deterministic seeded graph.
-- Persists mastery and assessment history for each concept in SQLite.
-- Diagnoses low-mastery concepts and checks their prerequisites.
-- Creates adaptive practice for the selected weakness, with AI generation when configured and demo questions as a fallback.
-- Grades submitted answers on the server, stores question results, updates mastery, and returns before/after values and a recalculated recommendation.
-- Answers document questions using token-overlap/relevance ranking over extracted chunks, with source page references when available. Retrieval does not use embeddings or a vector database.
+```text
+Study material
+      ↓
+Knowledge graph
+      ↓
+Learner model
+      ↓
+Weakness diagnosis
+      ↓
+Adaptive practice
+      ↓
+Assessment
+      ↓
+Mastery update
+      ↓
+Next best action
+```
 
-## Technology
+Most AI study tools can explain a topic. The harder problem is knowing what this learner should learn next. StudyMind keeps learner state across sessions and uses assessed results, concept mastery, and available prerequisite relationships to select a next action.
 
-- Backend: Python, FastAPI, SQLAlchemy async, SQLite/aiosqlite, PyMuPDF
-- AI integration: Google Gemini when configured; fallback/demo behavior is available
-- Frontend: React, TypeScript, Vite, Tailwind CSS, Radix UI
+## Product and optional demo
+
+The normal application uses real accounts, private uploaded documents, real AI processing when configured, learner-specific assessments and mastery, and persistent data. A new account starts without seeded concepts or mastery.
+
+Optional **Demo Mode** provides a deterministic seeded learner for local testing and presentation. It is not required for normal registration and should remain disabled in a public deployment.
+
+## Features
+
+- Email/password registration and login with hashed passwords and an HTTP-only session cookie.
+- Private PDF uploads with signature and size validation, page-aware text extraction, and user-scoped documents and chunks.
+- Gemini-backed concept and relationship extraction, question generation, and grounded answers when configured.
+- Per-user knowledge graphs, assessments, server-side scoring, persisted question results, mastery, and recommendations.
+- Adaptive practice driven by the current learner model, plus source-page citations in Ask My Notes.
+- Honest empty and AI-unavailable states; the app does not replace missing AI output with fake concepts or mastery.
 
 ## Run locally
 
@@ -37,16 +47,17 @@ The components interact: practice results update the learner model, and the next
 
 ```powershell
 cd backend
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+# Edit backend/.env locally; never commit it.
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-
-If the virtual environment is already set up, start the backend from the `backend` directory with only the final command above.
 
 ### Frontend
 
-In a second PowerShell terminal, from the repository root:
+In another terminal from the repository root:
 
 ```powershell
 cd frontend
@@ -54,34 +65,71 @@ npm install
 npm run dev -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:5173`. The API docs are at `http://127.0.0.1:8000/docs`; the backend health check is `http://127.0.0.1:8000/health`.
+Open <http://127.0.0.1:5173>. The Vite development server proxies `/api` requests to `http://localhost:8000`. The API docs and health check are at <http://127.0.0.1:8000/docs> and <http://127.0.0.1:8000/health>.
 
-### Configuration
-
-Copy the example environment file into the backend directory, then add a Gemini key there only if you want Gemini-backed generation:
+Build the frontend for production with:
 
 ```powershell
-Copy-Item .env.example backend/.env
+cd frontend
+npm run build
 ```
 
-Without a key, the app uses its fallback/demo behavior. The example SQLite URL matches the backend's default local database path. Keep `backend/.env` private; do not commit API keys.
+## Configuration
 
-## NOVA demo mode
+The backend loads environment settings from `backend/.env` during local development. Start Uvicorn from the `backend` directory. Keep secrets in local ignored files or the hosting provider's secret manager; never commit them or place them in frontend variables.
 
-The app uses a deterministic demo learner and includes a reset endpoint/button to restore the seeded scenario. Reset starts with Trees at 42% and Recursion at 51%, connected by a prerequisite relationship. Run targeted practice, submit answers, and show the backend-returned mastery result and changed recommendation. One recorded NOVA demo example showed Trees changing from 42.0% to 53.0% (+11.0 points); this is an observed run, not a guaranteed result or evidence of general learning gains. Results vary with the submitted answers. Reset before each take so the starting state is consistent.
+| Variable | Purpose |
+| --- | --- |
+| `GEMINI_API_KEY` | Backend-only key for AI extraction and generation. Without it, uploads/chunks still work, while AI-dependent features report unavailable. |
+| `DATABASE_URL` | SQLAlchemy database URL. Defaults to a local SQLite database. |
+| `AUTH_SECRET` | Signs session cookies. Use a unique, high-entropy value outside local development. |
+| `DEBUG` | Enables development cookie behavior. Set `false` over HTTPS; session cookies then use `Secure`. |
+| `CORS_ORIGINS` | JSON list of allowed cross-origin browser origins. The bundled deployment serves UI and API from one origin and uses an empty list. |
+| `DEMO_MODE` | Enables optional demo endpoints. Keep `false` for normal users and deployment. |
+| `TEST_MODE` | Enables test-only demo identity behavior. Keep `false` outside tests. |
+| `SESSION_HOURS` | Session-cookie lifetime. |
+| `UPLOAD_MAX_BYTES` | Maximum PDF size in bytes; defaults to 10 MiB. |
+| `UPLOAD_DIRECTORY` | Private directory for uploaded PDFs. |
+| `BACKEND_HOST`, `BACKEND_PORT`, `FRONTEND_PORT` | Local server defaults. The container uses the hosting provider's `PORT`. |
 
-See [NOVA_SUBMISSION.md](NOVA_SUBMISSION.md), [NOVA_FINAL_DEMO.md](NOVA_FINAL_DEMO.md), [NOVA_30_SECOND_PITCH.md](NOVA_30_SECOND_PITCH.md), [NOVA_2_MINUTE_PITCH.md](NOVA_2_MINUTE_PITCH.md), [NOVA_JUDGE_QA.md](NOVA_JUDGE_QA.md), [NOVA_SLIDES.md](NOVA_SLIDES.md), [NOVA_ARCHITECTURE.md](NOVA_ARCHITECTURE.md), [NOVA_PRESENTER_CHECKLIST.md](NOVA_PRESENTER_CHECKLIST.md), and [NOVA_DEMO_RECOVERY.md](NOVA_DEMO_RECOVERY.md) for the final submission package.
+## Deployment (Render Blueprint)
 
-## Verification and limitations
+The repository includes a `Dockerfile` and `render.yaml` for a single-origin deployment: the FastAPI service serves the built React app and API together. The Blueprint requests a Render **Starter** web service and a 1 GB persistent disk mounted at `/var/data`; this paid disk is necessary because SQLite and uploaded PDFs are local files. Render's default service filesystem is ephemeral, so deploying without the configured disk would lose those files on restart or redeploy. See [Render's disk documentation](https://render.com/docs/disks).
 
-The project has a backend pytest suite and a frontend TypeScript/build workflow. From the repository root in PowerShell, run:
+To deploy, connect this public GitHub repository in Render and create a Blueprint from `render.yaml`. Render generates `AUTH_SECRET` and prompts for `GEMINI_API_KEY`; enter the key in Render's secret/environment settings only. The Blueprint sets `DEBUG=false`, disables demo/test mode, stores SQLite and uploads on the disk, and uses same-origin requests so production CORS does not need a wildcard. The session cookie is Secure when `DEBUG=false`.
+
+After Render provisions the service, use its assigned HTTPS hostname for the website, `/health`, and `/docs`. The URL is assigned by the hosting provider and is intentionally not hardcoded here. Verify registration, upload/AI processing, learning flow, persistence, and two-user isolation against that deployed service before treating it as live. This setup is a small MVP deployment, not enterprise-scale infrastructure; back up its persistent disk and review hosting costs and provider limits.
+
+## Optional deterministic demo
+
+For local testing or a presentation, set `DEMO_MODE=true` in `backend/.env` and use the demo controls in the application. The seeded learner is tooling for this optional path only. Normal account creation does not initialize or receive demo data.
+
+## Validation
+
+From the repository root in PowerShell:
 
 ```powershell
 cd backend
-.\venv\Scripts\python -m pytest -v
+.\.venv\Scripts\python.exe -m pytest -v
 cd ..\frontend
 npx tsc --noEmit
 npm run build
 ```
 
-The current prototype uses a deterministic demo learner rather than a full account system. PDF processing extracts selectable text; scanned-page OCR is not implemented. Gemini-backed concept/relationship extraction and generated content can be imperfect, and the seeded demo graph is not evidence that arbitrary documents will be modeled correctly. Ask My Notes ranks chunks by token overlap/relevance and can return source pages; it does not use embeddings or a vector database. The mastery heuristic has not been validated against educational outcomes. No learning gains or study-time reductions have been measured.
+## Technology and limitations
+
+- Frontend: React, TypeScript, Vite, Tailwind CSS, Radix UI.
+- Backend: FastAPI, SQLAlchemy async, SQLite/aiosqlite, and PyMuPDF.
+- AI: Google Gemini through the backend-only `google-genai` SDK.
+- PDF extraction supports selectable text; scanned-page OCR is not implemented.
+- Note retrieval ranks page-aware chunks by token overlap, not embeddings or a vector database.
+- AI-generated educational content can be imperfect. The mastery heuristic is not a validated measure of learning outcomes.
+- SQLite plus a persistent disk is suitable for this MVP deployment, not a claim of production-scale concurrency or availability.
+
+## NOVA materials
+
+The repository includes the NOVA submission, architecture, pitches, demo, recovery, slide, judge Q&A, and presenter checklist documents. They describe the deterministic presentation scenario where relevant; seeded percentages in those materials are not values assigned to new accounts. Start with [NOVA_SUBMISSION.md](NOVA_SUBMISSION.md), [NOVA_ARCHITECTURE.md](NOVA_ARCHITECTURE.md), and [NOVA_FINAL_DEMO.md](NOVA_FINAL_DEMO.md).
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md). StudyMind AI is licensed under the [MIT License](LICENSE).

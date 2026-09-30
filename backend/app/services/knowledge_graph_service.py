@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.concept import Concept, ConceptRelationship, LearnerConceptMastery
+from app.models.document import Document
 
 
 class KnowledgeGraphService:
@@ -11,20 +12,20 @@ class KnowledgeGraphService:
 
     @staticmethod
     async def get_prerequisites(
-        concept_id: int, db: AsyncSession
+        concept_id: int, db: AsyncSession, user_id: Optional[int] = None
     ) -> List[Concept]:
         """Prerequisites FOR concept_id: source --prerequisite--> target (concept_id)."""
-        result = await db.execute(
-            select(Concept)
-            .join(
-                ConceptRelationship,
-                Concept.id == ConceptRelationship.source_concept_id,
-            )
-            .where(
-                ConceptRelationship.target_concept_id == concept_id,
-                ConceptRelationship.relationship_type == "prerequisite",
-            )
+        query = select(Concept).join(
+            ConceptRelationship,
+            Concept.id == ConceptRelationship.source_concept_id,
+        ).where(
+            ConceptRelationship.target_concept_id == concept_id,
+            ConceptRelationship.relationship_type == "prerequisite",
         )
+        if user_id is not None:
+            query = query.join(Document, Concept.document_id == Document.id)
+            query = query.where(Document.user_id == user_id)
+        result = await db.execute(query)
         return list(result.scalars().all())
 
     @staticmethod
@@ -41,7 +42,7 @@ class KnowledgeGraphService:
         document_id: int, user_id: int, db: AsyncSession
     ) -> Dict[str, Any]:
         concepts_result = await db.execute(
-            select(Concept).where(Concept.document_id == document_id)
+            select(Concept).join(Document).where(Concept.document_id == document_id, Document.user_id == user_id)
         )
         concepts = list(concepts_result.scalars().all())
         concept_ids = [c.id for c in concepts]
@@ -82,8 +83,8 @@ class KnowledgeGraphService:
                         "name": concept.name,
                         "description": concept.description,
                         "difficulty": concept.difficulty,
-                        "mastery": 0.0,
-                        "accuracy": 0.0,
+                        "mastery": None,
+                        "accuracy": None,
                         "total_attempts": 0,
                         "correct_attempts": 0,
                         "status": "not_studied",

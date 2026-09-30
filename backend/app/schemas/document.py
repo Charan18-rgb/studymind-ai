@@ -14,8 +14,6 @@ class DocumentCreate(DocumentBase):
 
 class Document(DocumentBase):
     id: int
-    user_id: int
-    file_path: str
     page_count: int
     status: str
     created_at: datetime

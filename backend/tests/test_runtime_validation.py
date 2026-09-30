@@ -12,6 +12,16 @@ from app.services.mastery_service import MasteryService
 from app.services.weak_topic_service import weak_topic_service
 
 
+@pytest.fixture(autouse=True)
+def enable_internal_demo_fixture():
+    from app.core.config import settings
+    previous = (settings.demo_mode, settings.test_mode)
+    settings.demo_mode = True
+    settings.test_mode = True
+    yield
+    settings.demo_mode, settings.test_mode = previous
+
+
 @pytest.mark.asyncio
 async def test_demo_reset_and_idempotence():
     """Verify demo reset restores baseline and demo init is idempotent."""

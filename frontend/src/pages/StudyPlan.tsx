@@ -18,6 +18,7 @@ export default function StudyPlan() {
   const [preferredTime, setPreferredTime] = useState('morning')
   const [examDate, setExamDate] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
     loadStudyPlan()
@@ -37,6 +38,7 @@ export default function StudyPlan() {
 
   const handleGeneratePlan = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
     setGenerating(true)
     try {
       const newPlan = await api.generateStudyPlan({
@@ -47,11 +49,13 @@ export default function StudyPlan() {
       setPlan(newPlan)
       setShowCreate(false)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to generate plan')
+      setFormError(err instanceof Error ? err.message : 'Failed to generate plan')
     } finally {
       setGenerating(false)
     }
   }
+
+  if (!loading && plan?.items.length === 0) return <div className="space-y-6"><h1 className="text-3xl font-bold tracking-tight">Study Plan</h1><Card className="ambient-panel"><CardContent className="space-y-3 p-10 text-center"><Sparkles className="mx-auto h-10 w-10 text-primary" /><h2 className="text-lg font-semibold">Build your learner model first</h2><p className="text-sm text-muted-foreground">Your personalized study plan will appear after StudyMind understands your learning material and current mastery.</p></CardContent></Card></div>
 
   const handleToggleItem = async (itemId: number) => {
     if (!plan) return
@@ -117,6 +121,7 @@ export default function StudyPlan() {
           </CardHeader>
           <CardContent className="p-6">
             <form onSubmit={handleGeneratePlan} className="space-y-4">
+              {formError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{formError}</p>}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="text-xs font-semibold block mb-1.5">Target Exam Date</label>

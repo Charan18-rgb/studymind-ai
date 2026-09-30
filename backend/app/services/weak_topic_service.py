@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.concept import Concept, LearnerConceptMastery
+from app.models.document import Document
 from app.services.knowledge_graph_service import knowledge_graph_service
 
 WEAK_MASTERY_THRESHOLD = 70.0
@@ -16,7 +17,9 @@ class WeakTopicService:
         result = await db.execute(
             select(LearnerConceptMastery, Concept)
             .join(Concept, LearnerConceptMastery.concept_id == Concept.id)
+            .join(Document, Concept.document_id == Document.id)
             .where(LearnerConceptMastery.user_id == user_id)
+            .where(Document.user_id == user_id)
             .order_by(LearnerConceptMastery.mastery_score.asc())
         )
         weak = []
@@ -45,7 +48,7 @@ class WeakTopicService:
 
         primary = weak_topics[0]
         prereq_concepts = await knowledge_graph_service.get_prerequisites(
-            primary["concept_id"], db
+            primary["concept_id"], db, user_id=user_id
         )
         mastery_map = await knowledge_graph_service.get_mastery_map(user_id, db)
 
@@ -56,8 +59,8 @@ class WeakTopicService:
                 {
                     "concept_id": prereq.id,
                     "concept": prereq.name,
-                    "mastery": m.mastery_score if m else 0.0,
-                    "accuracy": m.accuracy if m else 0.0,
+                    "mastery": m.mastery_score if m else None,
+                    "accuracy": m.accuracy if m else None,
                 }
             )
 

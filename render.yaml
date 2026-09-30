@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: studymind-ai
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    disk:
+      name: studymind-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DEBUG
+        value: "false"
+      - key: DEMO_MODE
+        value: "false"
+      - key: TEST_MODE
+        value: "false"
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////var/data/studymind.db
+      - key: UPLOAD_DIRECTORY
+        value: /var/data/uploads
+      - key: UPLOAD_MAX_BYTES
+        value: "10485760"
+      - key: SESSION_HOURS
+        value: "24"
+      - key: CORS_ORIGINS
+        value: "[]"
+      - key: GEMINI_API_KEY
+        sync: false

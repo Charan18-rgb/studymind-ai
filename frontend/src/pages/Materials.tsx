@@ -22,6 +22,8 @@ export default function Materials() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadProgressMsg, setUploadProgressMsg] = useState('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [askError, setAskError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null)
 
@@ -57,16 +59,18 @@ export default function Materials() {
     if (!file) return
 
     setUploading(true)
-    setUploadProgressMsg('Reading your document...')
-
-    setTimeout(() => setUploadProgressMsg('Identifying concepts & prerequisites...'), 1200)
-    setTimeout(() => setUploadProgressMsg('Building your knowledge map...'), 2400)
+    setUploadError(null)
+    if (file.size === 0) { setUploading(false); setUploadError('Choose a non-empty PDF file.'); return }
+    if (file.size > 10 * 1024 * 1024) { setUploading(false); setUploadError('PDF must be 10 MB or smaller.'); return }
+    if (!file.name.toLowerCase().endsWith('.pdf') || (file.type && file.type !== 'application/pdf')) { setUploading(false); setUploadError('Only PDF files are supported.'); return }
+    setUploadProgressMsg('Uploading and extracting page text…')
 
     try {
-      await api.uploadDocument(file)
+      const uploaded = await api.uploadDocument(file)
       await loadDocuments()
+      if (uploaded.status === 'ai_unavailable') setUploadProgressMsg('Document indexed. AI knowledge extraction is unavailable until configured.')
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Upload failed')
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
       setUploadProgressMsg('')
@@ -81,11 +85,13 @@ export default function Materials() {
     const question = askQuestion
     setAskQuestion('')
     setAsking(true)
+    setAskError(null)
 
     try {
       const res = await api.askDocument(selectedDocId, question)
       setChatHistory((prev) => [...prev, { question, response: res }])
     } catch (err) {
+      setAskError(err instanceof Error ? err.message : 'Unable to search this document.')
       setChatHistory((prev) => [
         ...prev,
         {
@@ -161,6 +167,8 @@ export default function Materials() {
           </CardContent>
         </Card>
       )}
+      {uploadError && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="p-4 text-sm text-destructive">{uploadError}</CardContent></Card>}
+      {askError && <Card className="border-destructive/40 bg-destructive/5"><CardContent className="p-4 text-sm text-destructive">{askError}</CardContent></Card>}
 
       {/* Main Grid: Document List on Left, Ask My Notes on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -226,7 +234,7 @@ export default function Materials() {
                                 <BookOpen className="w-3.5 h-3.5" /> {doc.page_count} pages
                               </span>
                               <span className="flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Grounded
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> {doc.status === 'ready' ? 'Knowledge ready' : doc.status === 'ai_unavailable' ? 'Text indexed · AI unavailable' : doc.status}
                               </span>
                             </div>
                           </div>
@@ -253,7 +261,7 @@ export default function Materials() {
                   Ask My Notes (Document RAG)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  {activeDoc ? `Grounded in: ${activeDoc.title}` : 'Select a document to ask questions'}
+                  {activeDoc ? `${activeDoc.title} · ${activeDoc.status === 'ai_unavailable' ? 'Searches return matching source excerpts' : 'Answers use this document only'}` : 'Select a document to ask questions'}
                 </p>
               </div>
               <Badge variant="secondary" className="text-[10px]">
@@ -352,7 +360,7 @@ export default function Materials() {
                   </div>
                   <div className="bg-muted/50 border p-3 rounded-2xl rounded-tl-none text-xs text-muted-foreground flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                    Searching document chunks & formulating grounded answer...
+                    Searching this document and preparing its matching source excerpts…
                   </div>
                 </div>
               )}

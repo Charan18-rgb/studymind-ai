@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.activity import LearningActivity
 from app.models.concept import Concept
 from app.models.quiz import Question, QuestionResult, Quiz, QuizAttempt
+from app.models.document import Document
 from app.services.mastery_persistence import apply_question_result
 from app.services.recommendation_service import recommendation_service
 
@@ -20,13 +21,15 @@ class QuizService:
         db: AsyncSession,
         track_concept_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        quiz_result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
+        quiz_result = await db.execute(select(Quiz).where(Quiz.id == quiz_id, Quiz.user_id == user_id))
         quiz = quiz_result.scalar_one_or_none()
         if not quiz:
             raise ValueError("Quiz not found")
 
         q_result = await db.execute(select(Question).where(Question.quiz_id == quiz_id))
         questions = {q.id: q for q in q_result.scalars().all()}
+        if not answers or any(ans.get("question_id") not in questions for ans in answers):
+            raise ValueError("Invalid question for this quiz")
 
         before_mastery: Optional[float] = None
         target_concept_name: Optional[str] = None
@@ -57,7 +60,7 @@ class QuizService:
             selected = ans.get("selected_answer", "")
             question = questions.get(qid)
             if not question:
-                continue
+                raise ValueError("Invalid question for this quiz")
 
             is_correct = selected.strip() == question.correct_answer.strip()
             if is_correct:

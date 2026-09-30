@@ -35,12 +35,7 @@ async def get_current_study_plan(
     )
     plan = result.scalars().first()
     if not plan:
-        # Return a generated default plan on the fly
-        return await generate_adaptive_plan(
-            StudyPlanGenerateRequest(hours_per_day=2, preferred_study_time="morning"),
-            user_id=user_id,
-            db=db,
-        )
+        return {"id": 0, "title": "Your study plan", "hours_per_day": 0, "preferred_study_time": "", "completion_rate": 0, "total_items": 0, "completed_items": 0, "items": []}
 
     # Fetch items
     items_result = await db.execute(
@@ -99,9 +94,12 @@ async def generate_adaptive_plan(
     # 1. Fetch learner weak topics
     diagnosis = await weak_topic_service.diagnose(user_id, db)
     weak_topics = await weak_topic_service.get_weak_topics(user_id, db, limit=6)
+    if not weak_topics:
+        return {"id": 0, "title": "Your study plan", "hours_per_day": 0, "preferred_study_time": "", "completion_rate": 0, "total_items": 0, "completed_items": 0, "items": []}
 
     # 2. Extract concepts
-    all_concepts_res = await db.execute(select(Concept))
+    from app.models.document import Document
+    all_concepts_res = await db.execute(select(Concept).join(Document).where(Document.user_id == user_id))
     all_concepts = {c.id: c for c in all_concepts_res.scalars().all()}
 
     # Create plan container
@@ -144,7 +142,7 @@ async def generate_adaptive_plan(
                     duration_minutes=45,
                     activity="Review",
                     difficulty="easy",
-                    is_completed=True,  # seed first as done for realistic feel
+                    is_completed=False,
                 )
             )
             break
@@ -242,9 +240,9 @@ async def generate_adaptive_plan(
         "title": plan.title,
         "hours_per_day": plan.hours_per_day,
         "preferred_study_time": plan.preferred_study_time,
-        "completion_rate": 16.7,
+        "completion_rate": 0,
         "total_items": len(plan_items),
-        "completed_items": 1,
+        "completed_items": 0,
         "items": [
             {
                 "id": item.id,
@@ -271,7 +269,7 @@ async def toggle_item_completed(
     db: AsyncSession = Depends(get_db),
 ):
     """Toggle completion status of a study plan item."""
-    result = await db.execute(select(StudyPlanItem).where(StudyPlanItem.id == item_id))
+    result = await db.execute(select(StudyPlanItem).join(StudyPlan).where(StudyPlanItem.id == item_id, StudyPlan.user_id == user_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Study plan item not found")

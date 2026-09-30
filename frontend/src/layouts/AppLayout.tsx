@@ -1,8 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import Router from '@/components/Router'
-import { Brain, BookOpen, Network, Target, FileText, Calendar, BarChart3, Settings, Home, Menu, X } from 'lucide-react'
+import { Brain, BookOpen, Network, Target, FileText, Calendar, BarChart3, Settings, Home, Menu, X, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/auth/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -18,6 +20,9 @@ const navigation = [
 export default function AppLayout() {
   const location = useLocation()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const handleLogout = async () => { await logout(); navigate('/login', { replace: true }) }
 
   return (
     <div className="relative min-h-screen bg-background/40">
@@ -40,6 +45,7 @@ export default function AppLayout() {
               <item.icon className="w-5 h-5" />{item.name}
             </Link>
           })}
+          <button onClick={handleLogout} className="nav-link flex w-full items-center gap-3 rounded-md px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"><LogOut className="w-5 h-5" />Log out · {user?.email}</button>
         </nav>}
       </div>
 
@@ -80,12 +86,13 @@ export default function AppLayout() {
           <div className="p-4 border-t border-white/10">
             <div className="flex items-center gap-3 px-4 py-3">
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-sm font-medium text-primary">S</span>
+                <span className="text-sm font-medium text-primary">{user?.name?.[0]?.toUpperCase() || 'U'}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">Student</p>
-                <p className="text-xs text-muted-foreground truncate">student@example.com</p>
+                <p className="text-sm font-medium truncate">{user?.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
               </div>
+              <button aria-label="Log out" onClick={handleLogout} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"><LogOut className="h-4 w-4" /></button>
             </div>
           </div>
         </aside>

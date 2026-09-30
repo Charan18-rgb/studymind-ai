@@ -49,6 +49,8 @@ export default function ProgressPage() {
 
   const { metrics, topic_mastery, accuracy_trend, weekly_activity, difficulty_distribution } = analytics
 
+  if (metrics.questions_answered === 0) return <div className="space-y-6"><h1 className="text-3xl font-bold tracking-tight">Progress & Analytics</h1><Card className="ambient-panel"><CardContent className="space-y-3 p-10 text-center"><BarChart3 className="mx-auto h-10 w-10 text-primary" /><h2 className="text-lg font-semibold">Complete your first assessment to see learning analytics</h2><p className="text-sm text-muted-foreground">Your progress view will reflect answers and practice recorded for your account.</p></CardContent></Card></div>
+
   const topMetrics = [
     { label: 'Overall Mastery', value: `${metrics.overall_mastery}%`, icon: Target, color: 'text-primary' },
     { label: 'Quiz Accuracy', value: `${metrics.overall_accuracy}%`, icon: CheckCircle2, color: 'text-emerald-600' },

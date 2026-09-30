@@ -62,7 +62,7 @@ async def submit_adaptive_session(
             track_concept_id=track_concept_id,
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=404, detail="Session not found") from e
 
     return {
         "before_mastery": result["before_mastery"],

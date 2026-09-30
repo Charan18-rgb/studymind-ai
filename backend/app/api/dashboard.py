@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user_id
-from app.core.demo_user import DEMO_USER_EMAIL, DEMO_USER_NAME
+from app.core.deps import get_current_user, get_current_user_id
+from app.models.user import User
 from app.database.session import get_db
 from app.models.activity import LearningActivity
 from app.models.concept import Concept, LearnerConceptMastery
 from app.models.quiz import QuizAttempt
+from app.models.document import Document
 from app.services.recommendation_service import recommendation_service
 from app.services.weak_topic_service import weak_topic_service
 
@@ -18,16 +19,20 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("")
 async def get_dashboard(
+    current_user: User = Depends(get_current_user),
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     mastery_result = await db.execute(
         select(LearnerConceptMastery, Concept)
         .join(Concept, LearnerConceptMastery.concept_id == Concept.id)
+        .join(Document, Concept.document_id == Document.id)
         .where(LearnerConceptMastery.user_id == user_id)
+        .where(Document.user_id == user_id)
     )
     rows = list(mastery_result)
-    mastery_values = [m.mastery_score for m, _ in rows]
+    assessed_rows = [(m, concept) for m, concept in rows if (m.total_attempts or 0) > 0]
+    mastery_values = [m.mastery_score for m, _ in assessed_rows]
     overall_mastery = round(sum(mastery_values) / len(mastery_values), 1) if mastery_values else 0.0
 
     attempt_result = await db.execute(
@@ -35,7 +40,7 @@ async def get_dashboard(
     )
     quiz_accuracy = round(float(attempt_result.scalar() or 0), 1)
 
-    mastered_count = sum(1 for m, _ in rows if m.learning_status == "mastered")
+    mastered_count = sum(1 for m, _ in assessed_rows if m.learning_status == "mastered")
 
     activity_result = await db.execute(
         select(LearningActivity)
@@ -58,6 +63,8 @@ async def get_dashboard(
 
     weak_topics = await weak_topic_service.get_weak_topics(user_id, db, limit=5)
     next_action = await recommendation_service.get_next_best_action(user_id, db)
+    document_count = int(await db.scalar(select(func.count(Document.id)).where(Document.user_id == user_id)) or 0)
+    concept_count = int(await db.scalar(select(func.count(Concept.id)).join(Document).where(Document.user_id == user_id)) or 0)
 
     activities = await db.execute(
         select(LearningActivity)
@@ -82,15 +89,18 @@ async def get_dashboard(
         today -= timedelta(days=1)
 
     return {
-        "user": {"name": DEMO_USER_NAME, "email": DEMO_USER_EMAIL, "is_demo": True},
+        "user": {"name": current_user.name, "email": current_user.email, "is_demo": current_user.is_demo},
         "stats": {
             "mastery": overall_mastery,
             "quiz_accuracy": quiz_accuracy,
             "streak_days": streak_days,
             "study_hours": round(study_hours, 1),
             "topics_mastered": mastered_count,
+            "assessed_concepts": len(assessed_rows),
         },
         "weak_topics": weak_topics,
         "recent_activity": recent_activity,
         "next_best_action": next_action,
+        "document_count": document_count,
+        "concept_count": concept_count,
     }

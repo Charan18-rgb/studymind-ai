@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Zap,
   Network,
-  RotateCcw,
   Sparkles,
   ArrowRight,
   AlertTriangle,
@@ -22,7 +21,6 @@ import { api, DashboardResponse, Recommendation } from '@/lib/api'
 export default function Dashboard() {
   const [data, setData] = useState<DashboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [demoBusy, setDemoBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = async () => {
@@ -42,61 +40,21 @@ export default function Dashboard() {
     load()
   }, [])
 
-  const initDemo = async () => {
-    setDemoBusy(true)
-    try {
-      await api.initializeDemo()
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Demo init failed')
-    } finally {
-      setDemoBusy(false)
-    }
-  }
-
-  const resetDemo = async () => {
-    setDemoBusy(true)
-    try {
-      await api.resetDemo()
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Demo reset failed')
-    } finally {
-      setDemoBusy(false)
-    }
-  }
-
   const recommendation: Recommendation | null = data?.next_best_action ?? null
   const stats = data?.stats
 
   return (
     <div className="dashboard-shell space-y-8 max-w-6xl mx-auto">
-      {/* Top Welcome & Demo Controls */}
+      {/* Learner welcome */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Your learning state</p>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Good morning, {data?.user.name ?? 'Student'} 👋
+            Welcome, {data?.user.name ?? 'Learner'} 👋
           </h1>
           <p className="text-muted-foreground text-base sm:text-lg mt-1">
             Most AI tutors answer what you ask. StudyMind AI figures out what you should learn next.
           </p>
-          {data?.user.is_demo && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 text-xs font-semibold mt-2.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              Demo Mode Active — Data Structures Benchmark Set
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={initDemo} disabled={demoBusy} className="gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Reload Demo
-          </Button>
-          <Button variant="secondary" size="sm" onClick={resetDemo} disabled={demoBusy} className="gap-1.5">
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Demo State
-          </Button>
         </div>
       </div>
 
@@ -106,7 +64,11 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {stats && !loading && (
+      {stats && !loading && stats.assessed_concepts === 0 && data?.concept_count === 0 ? (
+        <Card className="ambient-panel border-primary/20"><CardContent className="space-y-4 p-8 text-center"><Brain className="mx-auto h-10 w-10 text-primary" /><h2 className="text-xl font-semibold">Your learning model starts with your material</h2><p className="mx-auto max-w-lg text-sm text-muted-foreground">{data.document_count ? 'Your document is saved and indexed. Knowledge extraction is unavailable until the AI service is configured.' : 'Upload your notes or textbook to create your personal knowledge map. After processing concepts and completing an assessment, StudyMind will personalize your learner state and next action.'}</p><Button asChild><Link to="/materials">{data.document_count ? 'View study material' : 'Upload study material'}</Link></Button></CardContent></Card>
+      ) : stats && !loading && stats.assessed_concepts === 0 && data.concept_count > 0 ? (
+        <Card className="ambient-panel border-primary/20"><CardContent className="space-y-4 p-8 text-center"><Brain className="mx-auto h-10 w-10 text-primary" /><h2 className="text-xl font-semibold">Complete an assessment to build your learner model</h2><p className="mx-auto max-w-lg text-sm text-muted-foreground">Your concepts are ready. Complete a concept assessment to establish measured mastery and personalize recommendations.</p><Button asChild><Link to="/quizzes">Start an assessment</Link></Button></CardContent></Card>
+      ) : stats && !loading && (
         <Card className="ambient-panel overflow-hidden border-white/10">
           <CardContent className="grid grid-cols-1 items-center gap-6 p-5 sm:grid-cols-[auto_1fr_auto] sm:p-7">
             <div className="relative mx-auto grid h-40 w-40 place-items-center rounded-full sm:mx-0" style={{ background: `conic-gradient(from 220deg, #4bd7ef ${Math.max(0, Math.min(100, stats.mastery))}%, rgb(117 143 184 / 14%) 0)` }} aria-label={`Overall mastery ${stats.mastery} percent`}>
@@ -134,7 +96,7 @@ export default function Dashboard() {
             Analyzing your learner model and identifying your Next Best Action...
           </CardContent>
         </Card>
-      ) : recommendation ? (
+      ) : recommendation && (data?.weak_topics.length || data?.recent_activity.length || data?.concept_count) ? (
         <Card className="ambient-panel relative overflow-hidden border-primary/30 shadow-[0_24px_70px_rgba(20,100,153,.14)]">
           <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
           <div className="relative space-y-6 p-6 sm:p-8">
@@ -199,7 +161,7 @@ export default function Dashboard() {
       ) : null}
 
       {/* 2. KEY LEARNER STATS */}
-      {stats && (
+      {stats && stats.assessed_concepts > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Overall Mastery', value: `${stats.mastery}%`, icon: Brain, color: 'text-primary' },

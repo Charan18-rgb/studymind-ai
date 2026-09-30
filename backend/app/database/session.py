@@ -83,4 +83,20 @@ async def init_db():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # SQLite create_all does not add columns to existing local databases.
+        user_columns = await conn.execute(text("PRAGMA table_info(users)"))
+        existing_user_columns = {row[1] for row in user_columns.fetchall()}
+        if "password_hash" not in existing_user_columns:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+        # Legacy email indexes were case-sensitive; the index enforces normalized uniqueness too.
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower ON users (lower(email))"))
         await _migrate_learner_mastery_schema(conn)
+
+
+async def ensure_auth_schema():
+    """Small idempotent compatibility migration for existing SQLite databases."""
+    async with engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(users)"))
+        columns = {row[1] for row in result.fetchall()}
+        if "password_hash" not in columns:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))

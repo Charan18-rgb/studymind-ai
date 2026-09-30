@@ -1,13 +1,15 @@
 import os
 import re
+import uuid
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select
+from sqlalchemy import delete, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import ai_service
 from app.document_processing.processor import DocumentProcessor
 from app.models.concept import Concept, ConceptRelationship
 from app.models.document import Document, DocumentChunk
+from app.core.config import settings
 from app.schemas.document import DocumentChunk as DocumentChunkSchema
 
 
@@ -26,8 +28,9 @@ class DocumentService:
         db: AsyncSession,
     ) -> Document:
         """Upload and process a new PDF document."""
-        os.makedirs("data", exist_ok=True)
-        file_path = f"data/{filename}"
+        storage_dir = settings.upload_directory
+        os.makedirs(storage_dir, mode=0o700, exist_ok=True)
+        file_path = os.path.join(storage_dir, f"{uuid.uuid4().hex}.pdf")
         with open(file_path, "wb") as f:
             f.write(file_data)
 
@@ -75,9 +78,26 @@ class DocumentService:
             await db.flush()
 
             # Extract concepts using AI if available
-            if ai_service.available:
+            extraction_succeeded = False
+            if ai_service.available and processed["text"].strip():
                 try:
                     concepts_data = ai_service.extract_concepts(processed["text"])
+                    if not isinstance(concepts_data, list):
+                        raise ValueError("Malformed concept extraction")
+                    validated_concepts = []
+                    for item in concepts_data[:80]:
+                        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip():
+                            continue
+                        difficulty = item.get("difficulty", "medium")
+                        importance = item.get("importance", 0.5)
+                        if difficulty not in ("easy", "medium", "hard"):
+                            difficulty = "medium"
+                        try:
+                            importance = max(0.0, min(1.0, float(importance)))
+                        except (TypeError, ValueError):
+                            importance = 0.5
+                        validated_concepts.append({**item, "name": item["name"].strip()[:200], "difficulty": difficulty, "importance": importance})
+                    concepts_data = validated_concepts
                     concept_map: Dict[str, Concept] = {}
 
                     for concept_data in concepts_data:
@@ -96,27 +116,49 @@ class DocumentService:
                     relationships_data = ai_service.extract_relationships(
                         concept_names, processed["text"]
                     )
+                    if not isinstance(relationships_data, list):
+                        raise ValueError("Malformed relationship extraction")
 
                     for rel_data in relationships_data:
+                        if not isinstance(rel_data, dict):
+                            continue
                         src_name = rel_data.get("source", "").lower()
                         tgt_name = rel_data.get("target", "").lower()
                         src_concept = concept_map.get(src_name)
                         tgt_concept = concept_map.get(tgt_name)
 
-                        if src_concept and tgt_concept and src_concept.id != tgt_concept.id:
+                        relationship_type = rel_data.get("relationship_type", rel_data.get("type", "related")) if isinstance(rel_data, dict) else None
+                        if src_concept and tgt_concept and src_concept.id != tgt_concept.id and relationship_type in ("prerequisite", "related", "depends_on"):
+                            try:
+                                confidence = max(0.0, min(1.0, float(rel_data.get("confidence", 0.8) or 0.8)))
+                            except (TypeError, ValueError):
+                                confidence = 0.8
                             rel = ConceptRelationship(
                                 source_concept_id=src_concept.id,
                                 target_concept_id=tgt_concept.id,
-                                relationship_type=rel_data.get("relationship_type", rel_data.get("type", "related")),
-                                confidence=rel_data.get("confidence", 0.8),
+                                relationship_type=relationship_type,
+                                confidence=confidence,
                             )
                             db.add(rel)
                     await db.flush()
-                except Exception as ai_err:
-                    print(f"AI concept extraction warning: {ai_err}")
+                    extraction_succeeded = True
+                except Exception:
+                    # Text and page-aware chunks remain available when AI extraction is down.
+                    concept_ids = select(Concept.id).where(Concept.document_id == document_id)
+                    await db.execute(delete(ConceptRelationship).where(or_(
+                        ConceptRelationship.source_concept_id.in_(concept_ids),
+                        ConceptRelationship.target_concept_id.in_(concept_ids),
+                    )))
+                    await db.execute(delete(Concept).where(Concept.document_id == document_id))
+                    await db.flush()
 
             if document:
-                document.status = "ready"
+                if not processed["chunks"]:
+                    document.status = "error"
+                elif not extraction_succeeded:
+                    document.status = "ai_unavailable"
+                else:
+                    document.status = "ready"
                 await db.flush()
 
         except Exception as e:

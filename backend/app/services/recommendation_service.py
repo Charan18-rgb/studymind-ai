@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import LearningActivity
 from app.models.concept import Concept, LearnerConceptMastery
+from app.models.document import Document
 from app.services.knowledge_graph_service import knowledge_graph_service
 from app.services.weak_topic_service import (
     PREREQ_WEAK_THRESHOLD,
@@ -20,7 +21,9 @@ class RecommendationService:
         mastery_result = await db.execute(
             select(LearnerConceptMastery, Concept)
             .join(Concept, LearnerConceptMastery.concept_id == Concept.id)
+            .join(Document, Concept.document_id == Document.id)
             .where(LearnerConceptMastery.user_id == user_id)
+            .where(Document.user_id == user_id)
         )
         rows = list(mastery_result)
         if not rows:
@@ -43,7 +46,7 @@ class RecommendationService:
 
         prereqs = diagnosis.get("prerequisites") or []
         weak_prereq = next(
-            (p for p in prereqs if p.get("mastery", 100) < PREREQ_WEAK_THRESHOLD),
+            (p for p in prereqs if p.get("mastery") is None or p.get("mastery", 100) < PREREQ_WEAK_THRESHOLD),
             None,
         )
 
@@ -155,7 +158,7 @@ class RecommendationService:
             "title": "Upload Your First Document",
             "description": "Start by uploading study material to build your knowledge map.",
             "duration_minutes": 5,
-            "reason": "No learning data available yet. Initialize demo or upload a PDF.",
+            "reason": "No learning data available yet. Upload study material to begin personalization.",
             "priority": 10,
         }
 

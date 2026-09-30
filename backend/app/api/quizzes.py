@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.service import ai_service
 from app.core.deps import get_current_user_id
 from app.database.session import get_db
-from app.models.concept import Concept
+from app.models.concept import Concept, LearnerConceptMastery
+from app.models.document import Document
 from app.models.quiz import Question, Quiz
 from app.services.quiz_service import quiz_service
 
@@ -37,29 +38,29 @@ async def generate_quiz(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    concept_result = await db.execute(select(Concept).where(Concept.id == body.concept_id))
+    concept_result = await db.execute(select(Concept).join(Document).where(Concept.id == body.concept_id, Document.user_id == user_id))
     concept = concept_result.scalar_one_or_none()
     if not concept:
         raise HTTPException(status_code=404, detail="Concept not found")
 
-    from app.services.mastery_persistence import get_or_create_mastery
+    mastery = await db.scalar(select(LearnerConceptMastery).where(LearnerConceptMastery.user_id == user_id, LearnerConceptMastery.concept_id == concept.id))
+    mastery_score = mastery.mastery_score if mastery else 0.0
 
-    mastery = await get_or_create_mastery(user_id, concept.id, db)
-
-    if ai_service.available:
+    if not ai_service.available:
+        raise HTTPException(status_code=503, detail="Question generation is temporarily unavailable. Configure the AI service and try again.")
+    try:
         questions_data = ai_service.generate_quiz(
             concept.name,
             concept.description or "",
             body.difficulty,
             body.num_questions,
-            mastery.mastery_score,
+            mastery_score,
         )
-    else:
-        from app.services.adaptive_learning_service import AdaptiveLearningService
-
-        questions_data = AdaptiveLearningService._demo_questions(concept, body.difficulty)[
-            : body.num_questions
-        ]
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Question generation is temporarily unavailable") from exc
+    questions_data = _validated_questions(questions_data)
+    if not questions_data:
+        raise HTTPException(status_code=503, detail="No valid questions could be generated for this concept")
 
     quiz = Quiz(
         document_id=concept.document_id,
@@ -100,6 +101,25 @@ async def generate_quiz(
     return {"quiz_id": quiz.id, "concept": concept.name, "questions": client_questions}
 
 
+def _validated_questions(items):
+    """Discard malformed generated questions before persisting learner-facing content."""
+    if not isinstance(items, list):
+        return []
+    valid = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        prompt = item.get("question_text")
+        options = item.get("options")
+        answer = item.get("correct_answer")
+        if (isinstance(prompt, str) and prompt.strip()
+                and isinstance(options, list) and len(options) >= 2
+                and all(isinstance(option, str) and option.strip() for option in options)
+                and isinstance(answer, str) and answer in options):
+            valid.append(item)
+    return valid
+
+
 @router.get("/{quiz_id}")
 async def get_quiz(
     quiz_id: int,
@@ -137,14 +157,17 @@ async def submit_quiz(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    quiz_result = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
+    quiz_result = await db.execute(select(Quiz).where(Quiz.id == quiz_id, Quiz.user_id == user_id))
     quiz = quiz_result.scalar_one_or_none()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     track = quiz.concepts[0] if quiz.concepts else None
     answers = [a.model_dump() for a in body.answers]
-    return await quiz_service.submit_quiz(user_id, quiz_id, answers, db, track_concept_id=track)
+    try:
+        return await quiz_service.submit_quiz(user_id, quiz_id, answers, db, track_concept_id=track)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="One or more answers do not belong to this quiz") from exc
 
 
 @router.get("/{quiz_id}/results")

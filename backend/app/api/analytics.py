@@ -9,6 +9,7 @@ from app.database.session import get_db
 from app.models.activity import LearningActivity
 from app.models.concept import Concept, LearnerConceptMastery
 from app.models.quiz import QuestionResult, QuizAttempt
+from app.models.document import Document
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -23,7 +24,9 @@ async def get_analytics(
     mastery_res = await db.execute(
         select(LearnerConceptMastery, Concept)
         .join(Concept, LearnerConceptMastery.concept_id == Concept.id)
+        .join(Document, Concept.document_id == Document.id)
         .where(LearnerConceptMastery.user_id == user_id)
+        .where(Document.user_id == user_id)
         .order_by(Concept.id.asc())
     )
     concept_rows = list(mastery_res)
