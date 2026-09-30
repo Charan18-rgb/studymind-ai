@@ -96,6 +96,8 @@ The backend loads environment settings from `backend/.env` during local developm
 
 The repository includes a `Dockerfile` and `render.yaml` for a single-origin deployment: the FastAPI service serves the built React app and API together. The Blueprint requests a Render **Starter** web service and a 1 GB persistent disk mounted at `/var/data`; this paid disk is necessary because SQLite and uploaded PDFs are local files. Render's default service filesystem is ephemeral, so deploying without the configured disk would lose those files on restart or redeploy. See [Render's disk documentation](https://render.com/docs/disks).
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Charan18-rgb/studymind-ai)
+
 To deploy, connect this public GitHub repository in Render and create a Blueprint from `render.yaml`. Render generates `AUTH_SECRET` and prompts for `GEMINI_API_KEY`; enter the key in Render's secret/environment settings only. The Blueprint sets `DEBUG=false`, disables demo/test mode, stores SQLite and uploads on the disk, and uses same-origin requests so production CORS does not need a wildcard. The session cookie is Secure when `DEBUG=false`.
 
 After Render provisions the service, use its assigned HTTPS hostname for the website, `/health`, and `/docs`. The URL is assigned by the hosting provider and is intentionally not hardcoded here. Verify registration, upload/AI processing, learning flow, persistence, and two-user isolation against that deployed service before treating it as live. This setup is a small MVP deployment, not enterprise-scale infrastructure; back up its persistent disk and review hosting costs and provider limits.
